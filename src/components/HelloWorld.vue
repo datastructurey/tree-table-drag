@@ -1,7 +1,8 @@
 <template>
     <div style="width: 100vw;">
         <el-table :data="tableData" border ref="taskTableRef" class="tree-table-drag" :row-class-name="tableRowClassName"
-            row-key="id" height="100vh">
+            row-key="id" height="100vh" :load="subTaskLoad" lazy
+            :tree-props="{ children: 'children', hasChildren: 'hasChildren' }">
             <el-table-column prop="date" label="Date" min-width="200px" />
             <el-table-column prop="name" label="Name" min-width="200px" />
             <el-table-column prop="address" label="Address" min-width="200px" />
@@ -65,6 +66,22 @@ let tableData = ref<User[]>([
         address: 'No. 189, Grove St, Los Angeles',
     },
 ])
+const childrenNodeData = ref<User[]>([
+    {
+        id: 31,
+        parentID: 3,
+        date: '2016-05-01',
+        name: 'wangxiaohu',
+        address: 'No. 189, Grove St, Los Angeles',
+    },
+    {
+        id: 32,
+        parentID: 3,
+        date: '2016-05-01',
+        name: 'wangxiaohu',
+        address: 'No. 189, Grove St, Los Angeles',
+    },
+])
 let sortableObj = ref<Sortable>() // 拖动实例化对象
 let relatedDom = ref<HTMLElement>() // 拖动到的dom
 let dragID = ref() // 拖动DOM的数据ID
@@ -93,8 +110,6 @@ function arraytotree(onearray: User[]): User[] {
         iterator.children = []
         nodeMap.set(iterator.id, iterator)
     }
-    console.log(nodeMap);
-
     for (const iterator of nodeMap.values()) {
         const nodeData = nodeMap.get(iterator.parentID)
         if (nodeData) {
@@ -109,25 +124,10 @@ function arraytotree(onearray: User[]): User[] {
 
 // 表格子任务加载
 const subTaskLoad = (rowInfo: User, treeNode: any, resolve: (date: any[]) => void) => {
-    const temp: User[] = [
-        {
-            id: 31,
-            parentID: 3,
-            date: '2016-05-01',
-            name: 'wangxiaohu',
-            address: 'No. 189, Grove St, Los Angeles',
-        },
-        {
-            id: 32,
-            parentID: 3,
-            date: '2016-05-01',
-            name: 'wangxiaohu',
-            address: 'No. 189, Grove St, Los Angeles',
-        },
-    ]
+
     // 模拟接口请求
     setTimeout(() => {
-        rowInfo.children = temp
+        rowInfo.children = childrenNodeData.value
         resolve(rowInfo.children || [])
     }, 1000)
 }
@@ -160,7 +160,7 @@ const tableStart = (event: SortableEvent) => {
         }, 300)
     )
 }
-// 表格拖动中
+// 表格拖动中 主要处理拖动的动画
 const tableMove = (evt: MoveEvent, originalEvent: Event) => {
     if (relatedDom.value && !evt.related.isEqualNode(relatedDom.value)) {
         // 如果替换的dom不一致，则删除原有的效果
@@ -189,7 +189,7 @@ const tableMove = (evt: MoveEvent, originalEvent: Event) => {
     }
     return false
 }
-// 表格拖动结束
+// 表格拖动结束 主要处理拖动后表格的数据变化
 const tableEnd = () => {
     let tempRequest: { DragID: number; DropID: number; DropType: string } = {
         DragID: dragID.value,
@@ -222,31 +222,44 @@ const tableEnd = () => {
         const dropData = oneArray.find((item: any) => item.id == tempRequest.DropID)
         if (dragIndex != -1 && dragData && dropIndex != -1 && dropData) {
             oneArray.splice(dragIndex, 1)
+            console.log(dragData);
+            const childrenIndex = childrenNodeData.value.findIndex(item => item.id === dropData.id)
+
             switch (tempRequest.DropType) {
                 case 'before':
                     oneArray.splice(dropIndex - 1, 0, dragData)
                     dragData.parentID = dropData.parentID
+                    // 模拟拖入子节点
+                    if (childrenIndex != -1) {
+                        childrenNodeData.value.splice(childrenIndex, 0, dragData)
+                    }
                     break;
                 case 'after':
                     oneArray.splice(dropIndex, 0, dragData)
                     dragData.parentID = dropData.parentID
+                    // 模拟拖入子节点
+                    if (childrenIndex != -1) {
+                        childrenNodeData.value.splice(childrenIndex - 1, 0, dragData)
+                    }
                     break;
                 case 'inner':
                     oneArray.splice(dropIndex, 0, dragData)
                     dragData.parentID = dropData.id
+                    // 模拟拖入子节点
+                    if (dropData.parentID !== 0) {
+                        childrenNodeData.value = childrenNodeData.value.map(item => {
+                            item.children?.push(dragData)
+                            return item
+                        })
+                    }
                     break;
                 default:
                     break;
             }
         }
-        console.log(oneArray);
         tableData.value = []
         nextTick(() => {
             tableData.value = arraytotree(oneArray)
-            console.log(taskTableRef.value!.store);
-
-            // taskTableRef.value!.store.states.lazyTreeNodeMap.value![rowInfo?.ID || 0] = rowInfo?.SubNodes
-            console.log(tableData.value);
             taskTableRef.value?.doLayout()
         })
         clearDragAnimation()
